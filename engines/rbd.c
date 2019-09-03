@@ -39,6 +39,7 @@ struct rbd_options {
 	char *rbd_name;
 	char *pool_name;
 	char *client_name;
+	char *cache_file;
 	int busy_poll;
 };
 
@@ -76,6 +77,15 @@ static struct fio_option options[] = {
 		.type		= FIO_OPT_STR_STORE,
 		.help		= "Name of the ceph client to access the RBD for the RBD engine",
 		.off1		= offsetof(struct rbd_options, client_name),
+		.category	= FIO_OPT_C_ENGINE,
+		.group		= FIO_OPT_G_RBD,
+	},
+	{
+		.name		= "cachefile",
+		.lname		= "rbd engine cache file",
+		.type		= FIO_OPT_STR_STORE,
+		.help		= "Cache file",
+		.off1		= offsetof(struct rbd_options, cache_file),
 		.category	= FIO_OPT_C_ENGINE,
 		.group		= FIO_OPT_G_RBD,
 	},
@@ -163,6 +173,11 @@ static bool _fio_rbd_setup_poll(struct rbd_data *rbd)
 }
 #endif
 
+static rbd_cache_ctx_t cache_ctx = NULL;
+static rbd_cache_t cache = NULL;
+static rbd_image_t core_img = NULL;
+static rbd_cached_volume_t cached_volume = NULL;
+
 static int _fio_rbd_connect(struct thread_data *td)
 {
 	struct rbd_data *rbd = td->io_ops_data;
@@ -223,6 +238,20 @@ static int _fio_rbd_connect(struct thread_data *td)
 	if (r < 0) {
 		log_err("rbd_open failed.\n");
 		goto failed_open;
+	}
+	log_err("Openning RBD %s / %p\n", o->rbd_name, rbd);
+	if (o->cache_file) {
+		if (!cache_ctx) {
+			log_err("Creating cache %s\n", o->cache_file);
+			rbd_init_cache_context(&cache_ctx);
+
+			rbd_create_cache(cache_ctx, rbd->io_ctx, o->cache_file, &cache);
+	
+//			rbd_open(rbd->io_ctx, o->rbd_name, &core_img, NULL /*snap */ );
+//			rbd_create_cached_volume(cache, core_img, &cached_volume);
+		}
+		rbd_create_cached_volume(cache, rbd->image, &cached_volume);
+//		rbd_attach_cached_volume(rbd->image, cached_volume);
 	}
 
 	if (!_fio_rbd_setup_poll(rbd))
